@@ -30,6 +30,20 @@ def format_ccomment(pstr):
 
     return out_str
 
+def unique_list(ilist):
+    olist = []
+    for item in ilist:
+        if item not in olist or item == "MASK":
+            olist.append(item)
+    return olist
+
+def remove_dup(l1, l2):
+    for item in l1:
+        if item in l2:
+            l2.remove(item)
+
+    return l2;
+
 class XMLElement(object):
     def __init__(self, XMLElement, type_name):
         self.xml_element = XMLElement
@@ -115,6 +129,7 @@ class EnumElementNode(object):
         self.custom = xml_element.get_custom()
         self.hidden = xml_element.get_hidden()
         self.id = xml_element.get_id()
+        self.tag = self.parent.tag
         self.long_description = xml_element.get_long_description()
         self.short_description = xml_element.get_short_description()
 
@@ -129,13 +144,19 @@ class EnumElementNode(object):
         if self.name is not None and self.value is not None:
             macro_val = self.value
             macro = "#define "
+            macro_name = []
             if tag != "":
-                macro += tag
-                macro += "_"
+                macro_name += tag.split('_')
+            if self.tag is not None:
+                macro_name += self.tag.split('_')
             if self.parent.name is not None and self.parent.name != "":
-                macro += self.parent.name
-                macro += "_"
-            macro += self.name
+                macro_name  += remove_dup(macro_name, self.parent.name.split('_'))
+            macro_name  += remove_dup(macro_name, self.name.split('_'))
+            # handling some special cases
+            if len(macro_name) > 0 and  macro_name[-1] == "MASK":
+                macro_name[-1] = "VALUE"
+            #macro += "_".join(unique_list(macro_name))
+            macro += "_".join(macro_name)
             macro =  macro.ljust(width)
             filep.write(macro)
             filep.write(macro_val)
@@ -163,6 +184,7 @@ class BitFieldElement(object):
         self.offset = xml_element.get_offset()
         self.long_description = xml_element.get_long_description()
         self.short_description = xml_element.get_short_description()
+        self.tag = self.parent.tag
         self.enum_elements = []
         xml_enum_elements = XMLBitFieldElement.findall(EnumElementNode.element_name)
         for xml_enum_element in xml_enum_elements:
@@ -182,11 +204,16 @@ class BitFieldElement(object):
         if self.name is not None and self.offset is not None and self.width is not None:
             mask = hex(pow(2, int(self.width)) - 1)
             macro = "#define "
+            macro_name = []
             if tag != "":
-                macro += tag
-                macro += "_"
-            macro += self.name
-            macro += "_MASK"
+                macro_name += tag.split('_')
+            if self.tag is not None:
+                macro_name += self.tag.split('_')
+            #macro_name += self.name.split('_')
+            macro_name  += remove_dup(macro_name, self.name.split('_'))
+            macro_name.append("MASK")
+            macro += "_".join(macro_name)
+            #macro += "_".join(unique_list(macro_name))
             macro =  macro.ljust(width)
             if int(self.offset) == 0:
                 macro_val = str(mask)
@@ -220,6 +247,13 @@ class RegisterMemElement(object):
         self.offset = xml_element.get_offset()
         self.long_description = xml_element.get_long_description()
         self.short_description = xml_element.get_short_description()
+        self.tag = self.name
+        if self.name is not None:
+            name_list = self.name.split('_')
+            if name_list.pop().startswith('REG'):
+                if name_list[-1].startswith('IRQ'):
+                    name_list.pop()
+                self.tag = '_'.join(name_list)
         self.bit_field_elements = []
         xml_bit_field_elements = XMLRegisterMemElement.findall(BitFieldElement.element_name)
         for xml_bit_field in xml_bit_field_elements:
@@ -271,6 +305,7 @@ class RegisterMemSet(object):
         self.address_unit = xml_element.get_address_unit()
         self.data_unit = xml_element.get_data_unit()
         self.regmem_elements = []
+        self.tag = self.name
         xml_regmem_elements = XMLRegisterMemSet.findall(RegisterMemElement.element_name)
         for xml_regmem_element in xml_regmem_elements:
             regmem_element = RegisterMemElement(self, xml_regmem_element)
