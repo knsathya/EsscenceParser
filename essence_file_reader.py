@@ -163,6 +163,11 @@ class EnumElementNode(object):
             if len(macro_name) > 0 and  macro_name[-1] == "MASK":
                 macro_name[-1] = "VALUE"
             macro_name = "_".join(macro_name)
+            if int(self.parent.offset) == 0:
+                macro_val = str(macro_val)
+            else:
+                macro_val = "( " + str(macro_val) + " << " + self.parent.offset + " )"
+
             return macro_name, macro_val
 
     def get_ccomment(self, filep, tag=""):
@@ -221,6 +226,24 @@ class BitFieldElement(object):
                 macro_val = str(mask)
             else:
                 macro_val = "( " + str(mask) + " << " + self.offset + " )"
+
+            return macro_name, macro_val
+
+    def get_offset_define(self, tag=""):
+        if self.name is not None and self.offset is not None and self.width is not None:
+            mask = hex(pow(2, int(self.width)) - 1)
+            macro_name = []
+            if tag != "":
+                macro_name += tag.split('_')
+            if self.tag is not None:
+                macro_name += self.tag.split('_')
+            macro_name  += remove_dup(macro_name, self.name.split('_'))
+            macro_name.append("OFFSET")
+            macro_name = "_".join(macro_name)
+            if int(self.offset) != 0:
+                macro_val = "( " + self.offset + " )"
+            else:
+                return None, None
 
             return macro_name, macro_val
 
@@ -336,9 +359,10 @@ class RegisterMemSet(object):
 
 class EssenceFileReader(object):
 
-    def __init__(self, essence_file_xml):
+    def __init__(self, essence_file_xml, regmem_set_filter=[]):
         self.essence_file_xml = essence_file_xml
         self._xml_root = xml.etree.ElementTree.parse(essence_file_xml).getroot()
+        self.regmem_set_filter = regmem_set_filter
         self.regmem_sets = []
         self.macro_sets = []
 
@@ -383,16 +407,24 @@ class EssenceFileReader(object):
 
     def generate_header_file(self, outfile, product_tag):
         for regmem_set in self.regmem_sets:
+            if len(self.regmem_set_filter) > 0:
+                if regmem_set.name in self.regmem_set_filter:
+                    continue
             comment = regmem_set.get_ccomment(outfile)
+            self.macro_sets.append((regmem_set, None , None, None))
             self.macro_sets.append((regmem_set, comment, None, None))
             for regmem_element in regmem_set.regmem_elements:
                 comment = regmem_element.get_ccomment(outfile)
                 macro, macro_val = regmem_element.get_cdefine(tag=product_tag)
+                self.macro_sets.append((regmem_element, None, None, None))
                 self.macro_sets.append((regmem_element, comment, macro, macro_val))
                 for bit_field_element in regmem_element.bit_field_elements:
                     comment = bit_field_element.get_ccomment(outfile)
                     macro, macro_val = bit_field_element.get_cdefine()
                     self.macro_sets.append((bit_field_element, comment, macro, macro_val))
+                    macro, macro_val = bit_field_element.get_offset_define()
+                    if macro is not None:
+                        self.macro_sets.append((bit_field_element, None, macro, macro_val))
                     for enum_element in bit_field_element.enum_elements:
                         #enum_element.get_ccomment(outfile)
                         macro, macro_val = enum_element.get_cdefine()
@@ -401,6 +433,8 @@ class EssenceFileReader(object):
         self._check_for_macro_dup()
 
         for macroset in self.macro_sets:
+            if macroset[1] is None and macroset[2] is None and macroset[3] is None:
+                outfile.write("\n")
             if macroset[1] is not None:
                 outfile.write(format_ccomment(macroset[1]))
                 outfile.write("\n")
@@ -414,7 +448,19 @@ if __name__ == "__main__":
     parser.add_argument('-i', metavar='in-file', type=argparse.FileType('rt'))
     parser.add_argument('-o', metavar='out-file', type=argparse.FileType('wt'))
     results = parser.parse_args()
-    reader = EssenceFileReader(results.i)
+    '''
+    filter_list = ['GPADC_CFG', 'ID', 'PWRUPDN', 'IRQ',\
+                   'PSEQ', 'RESET',  'PB', 'SW_CTRL', 'PSTAR_CFG', 'BAT_CHECK',\
+                   'SRC_DETECT', 'SRC_SELECT', 'BIF', 'BAT_STATUS_REG', 'BATTHERM', 'CCSM_STATUS'\
+                   'CCSM_CTRL', 'CCSM_OVERRIDE', 'USBBC_STATUS', 'USB_CTRL', 'USBBC_CTRL', 'USB_STATUS', 'USBC_CTRL'\
+                   'USBC_STATUS', 'USBC_PD', 'USBC_AFE', 'GPADC', 'BATPEAK', 'GPADC', 'SYSTHERM', 'CHRG_CTRL', 'CHRG_INP_CTRL'\
+                   'SRC_DETECT', 'COULCNT', 'BATPEAK', 'VBAT_MON']
+    '''
+    filter_list = ['VR_MON', 'VR_CTRL', 'DEBUG', 'PWRUPDN_CFG', 'TLP_CTRL', 'PSEQ_CFG', 'SPARE', 'ULPO_CFG',\
+                  'I2CS', 'BCU', 'RESET', 'WAKE', 'PMICWDT', 'DIGIO', 'REGACC', 'SW_IMONITORING',\
+                  'PEAK_PWR_MONITORING', 'SYSDROOP', 'GPLED', 'ACD', 'AUDFE', 'I2S', 'PLLA', 'DMIC',\
+                  'GPIO', 'XTAL', 'TMU', 'SCRATCH']
+    reader = EssenceFileReader(results.i, filter_list)
     reader.generate_header_file(results.o, results.product_tag)
 
         
