@@ -170,7 +170,7 @@ class EnumElementNode(object):
 
             return macro_name, macro_val
 
-    def get_ccomment(self, filep, tag=""):
+    def get_ccomment(self, tag=""):
         if self.short_description is not None and self.name is not None:
             comment = self.name
             comment += " : "
@@ -240,14 +240,11 @@ class BitFieldElement(object):
             macro_name  += remove_dup(macro_name, self.name.split('_'))
             macro_name.append("OFFSET")
             macro_name = "_".join(macro_name)
-            if int(self.offset) != 0:
-                macro_val = "( " + self.offset + " )"
-            else:
-                return None, None
+            macro_val = "( " + self.offset + " )"
 
             return macro_name, macro_val
 
-    def get_ccomment(self, filep, tag=""):
+    def get_ccomment(self, tag=""):
         if self.short_description is not None and self.name is not None:
             comment = self.name
             comment += " : "
@@ -305,7 +302,7 @@ class RegisterMemElement(object):
             macro_name += self.name
             return macro_name, macro_val
 
-    def get_ccomment(self, filep, tag=""):
+    def get_ccomment(self, tag=""):
         if self.short_description is not None and self.name is not None:
             comment = self.name
             comment += " : "
@@ -347,7 +344,7 @@ class RegisterMemSet(object):
                 "long desc  : " + self.long_description + "\n" + \
                 "hidden     : " + str(self.hidden) + "\n"
 
-    def get_ccomment(self, filep, tag=""):
+    def get_ccomment(self, tag=""):
         if self.short_description is not None and self.name is not None:
             comment = self.name
             comment += " : "
@@ -359,10 +356,11 @@ class RegisterMemSet(object):
 
 class EssenceFileReader(object):
 
-    def __init__(self, essence_file_xml, regmem_set_filter=[]):
+    def __init__(self, essence_file_xml, regmem_set_filter=[], regmem_element_filter=[]):
         self.essence_file_xml = essence_file_xml
         self._xml_root = xml.etree.ElementTree.parse(essence_file_xml).getroot()
         self.regmem_set_filter = regmem_set_filter
+        self.regmem_element_filter = regmem_element_filter
         self.regmem_sets = []
         self.macro_sets = []
 
@@ -406,20 +404,25 @@ class EssenceFileReader(object):
                         self._fix_macro_dup(index - 1, self.macro_sets.index(macro_set), "Enter new macro name for new entry:")
 
     def generate_header_file(self, outfile, product_tag):
+        new_regmem_set = False
         for regmem_set in self.regmem_sets:
-            if len(self.regmem_set_filter) > 0:
-                if regmem_set.name in self.regmem_set_filter:
-                    continue
-            comment = regmem_set.get_ccomment(outfile)
-            self.macro_sets.append((regmem_set, None , None, None))
-            self.macro_sets.append((regmem_set, comment, None, None))
+            new_regmem_set = True
+            comment = regmem_set.get_ccomment()
             for regmem_element in regmem_set.regmem_elements:
-                comment = regmem_element.get_ccomment(outfile)
+                if len(self.regmem_element_filter) > 0:
+                    print regmem_element.name
+                    if regmem_element.name not in self.regmem_element_filter:
+                        continue
+                if new_regmem_set is True:
+                    self.macro_sets.append((regmem_set, None , None, None))
+                    self.macro_sets.append((regmem_set, comment, None, None))
+                    new_regmem_set = False
+                comment = regmem_element.get_ccomment()
                 macro, macro_val = regmem_element.get_cdefine(tag=product_tag)
                 self.macro_sets.append((regmem_element, None, None, None))
                 self.macro_sets.append((regmem_element, comment, macro, macro_val))
                 for bit_field_element in regmem_element.bit_field_elements:
-                    comment = bit_field_element.get_ccomment(outfile)
+                    comment = bit_field_element.get_ccomment()
                     macro, macro_val = bit_field_element.get_cdefine()
                     self.macro_sets.append((bit_field_element, comment, macro, macro_val))
                     macro, macro_val = bit_field_element.get_offset_define()
@@ -447,20 +450,107 @@ if __name__ == "__main__":
     parser.add_argument('-t', action="store", help="prefix tag for register names", dest="product_tag", default="")
     parser.add_argument('-i', metavar='in-file', type=argparse.FileType('rt'))
     parser.add_argument('-o', metavar='out-file', type=argparse.FileType('wt'))
+    parser.add_argument('--regmap-filter', metavar='regmap-filter', type=argparse.FileType('rt'))
+    parser.add_argument('--reg-filter', metavar='reg-filter', type=argparse.FileType('rt'))
     results = parser.parse_args()
+    print results
+    regmap_filter = [line.strip() for line in results.regmap_filter]
+    reg_filter = [line.strip() for line in results.reg_filter]
+    print reg_filter
+    #print regmap_filter
     '''
-    filter_list = ['GPADC_CFG', 'ID', 'PWRUPDN', 'IRQ',\
-                   'PSEQ', 'RESET',  'PB', 'SW_CTRL', 'PSTAR_CFG', 'BAT_CHECK',\
-                   'SRC_DETECT', 'SRC_SELECT', 'BIF', 'BAT_STATUS_REG', 'BATTHERM', 'CCSM_STATUS'\
-                   'CCSM_CTRL', 'CCSM_OVERRIDE', 'USBBC_STATUS', 'USB_CTRL', 'USBBC_CTRL', 'USB_STATUS', 'USBC_CTRL'\
-                   'USBC_STATUS', 'USBC_PD', 'USBC_AFE', 'GPADC', 'BATPEAK', 'GPADC', 'SYSTHERM', 'CHRG_CTRL', 'CHRG_INP_CTRL'\
-                   'SRC_DETECT', 'COULCNT', 'BATPEAK', 'VBAT_MON']
+    filter_list = ['VCC_DVS_FAST_REG',\
+                   'ID1_REG',\
+                   'ID2_REG',\
+                   'PLT_REG',\
+                   'NVMREL_REG',\
+                   'CUSTVER_REG',\
+                   'PROVER_REG',\
+                   'EXTRAVER_REG',\
+                   'LVL0_IRQ_REG',\
+                   'LVL1_PMIC_IRQ_REG',\
+                   'LVL2_INPUT_IRQ_REG',\
+                   'LVL2_TMU_IRQ_REG',\
+                   'LVL2_USBCTRL_IRQ_REG',\
+                   'LVL2_USBPD_IRQ_REG',\
+                   'LVL2_BAT_IRQ_REG',\
+                   'LVL2_BCU_IRQ0_REG',\
+                   'LVL2_BCU_IRQ1_REG',\
+                   'LVL2_CHGCTRL_IRQ_REG',\
+                   'LVL2_PSTAR_IRQ0_REG',\
+                   'LVL2_PSTAR_IRQ1_REG',\
+                   'LVL1_MULT_IRQ_REG',\
+                   'LVL2_GPADC_IRQ0_REG',\
+                   'LVL2_GPADC_IRQ1_REG',\
+                   'LVL2_CC_IRQ_REG Coulomb',\
+                   'LVL2_THERM_IRQ0_REG',\
+                   'LVL2_THERM_IRQ1_REG',\
+                   'LVL2_THERM_IRQ2_REG',\
+                   'LVL2_THERM_IRQ3_REG',\
+                   'LVL2_GPIO_IRQ0_REG',\
+                   'LVL2_GPIO_IRQ1_REG',\
+                   'LVL2_AUDFE_IRQ0_REG',\
+                   'LVL2_AUDFE_IRQ1_REG',\
+                   'LVL2_AUDFE_IRQ2_REG',\
+                   'LVL1_DEBUG_IRQ0_REG',\
+                   'LVL2_VROC_IRQ0_REG',\
+                   'LVL2_VROC_IRQ2_REG',\  
+                   'LVL2_VROC_IRQ3_REG',\
+                   'LVL2_VRMON_IRQ0_REG',\
+                   'LVL2_VRMON_IRQ1_REG',\
+                   'LVL2_VRMON_IRQ2_REG',\
+                   'LVL2_VRMON_IRQ3_REG',\
+                   'LVL2_VRMON_IRQ4_REG',\
+                   'LVL2_REGACC_IRQ_REG',\
+                   'MLVL0_IRQ_REG',\
+                   'MLVL1_PMIC_IRQ_REG',\  
+                   'MLVL2_INPUT_IRQ_REG',\
+                   'MLVL2_TMU_IRQ_REG',\
+                   'MLVL2_USBCTRL_IRQ_REG',\   
+                   'MLVL2_USBPD_IRQ_REG',\
+                   'MLVL2_BAT_IRQ_REG',\
+                   'MLVL2_BCU_IRQ0_REG',\
+                   'MLVL2_BCU_IRQ1_REG',\ 
+                   'MLVL2_CHGCTRL_IRQ_REG',\
+                   'MLVL2_PSTAR_IRQ0_REG,'\
+                   'MLVL2_PSTAR_IRQ1_REG',\ 
+                   'MLVL1_MULT_IRQ_REG',\
+                   'MLVL2_GPADC_IRQ0_REG',\
+                   'MLVL2_GPADC_IRQ1_REG',\
+                   'MLVL2_CC_IRQ_REG',\
+                   'MLVL2_THERM_IRQ0_REG',\
+                   'MLVL2_THERM_IRQ1_REG',\
+                   'MLVL2_THERM_IRQ2_REG',\
+                   'MLVL2_THERM_IRQ3_REG',\
+                   'MLVL2_GPIO_IRQ0_REG',\
+                   'MLVL2_GPIO_IRQ1_REG',\
+                   'MLVL2_AUDFE_IRQ0_REG',\
+                   'MLVL2_AUDFE_IRQ1_REG',\
+                   'MLVL2_AUDFE_IRQ2_REG',\
+                   'MLVL1_DEBUG_IRQ0_REG',\
+                   'MLVL1_DEBUG_IRQ1_REG',\
+                   'MLVL2_VROC_IRQ0_REG',\
+                   'MLVL2_VROC_IRQ2_REG',\
+                   'MLVL2_VROC_IRQ3_REG',\
+                   'MLVL2_VRMON_IRQ0_REG',\
+                   'MLVL2_VRMON_IRQ1_REG',\
+                   'MLVL2_VRMON_IRQ2_REG',\
+                   'MLVL2_VRMON_IRQ3_REG',\
+                   'MLVL2_VRMON_IRQ4_REG',\
+                   'MLVL2_REGACC_IRQ_REG',\
+                   'CHIPCTRL_REG',\
+                   'STDBYCTRL_REG',\
+                   'PSEQCTRL_REG',\
+                   'SRCSTATUS_REG',\
+                   'PWRUP_STATUS_REG',\
+                   'PBCONFIG1_REG',\
+                   'PBCONFIG2_REG',\
+                   '',\
+                   '',\
+                   '',\
+                   '',\
+                   '',\
+                  ]
     '''
-    filter_list = ['VR_MON', 'VR_CTRL', 'DEBUG', 'PWRUPDN_CFG', 'TLP_CTRL', 'PSEQ_CFG', 'SPARE', 'ULPO_CFG',\
-                  'I2CS', 'BCU', 'RESET', 'WAKE', 'PMICWDT', 'DIGIO', 'REGACC', 'SW_IMONITORING',\
-                  'PEAK_PWR_MONITORING', 'SYSDROOP', 'GPLED', 'ACD', 'AUDFE', 'I2S', 'PLLA', 'DMIC',\
-                  'GPIO', 'XTAL', 'TMU', 'SCRATCH']
-    reader = EssenceFileReader(results.i, filter_list)
+    reader = EssenceFileReader(results.i, regmem_set_filter=regmap_filter, regmem_element_filter=reg_filter)
     reader.generate_header_file(results.o, results.product_tag)
-
-        
