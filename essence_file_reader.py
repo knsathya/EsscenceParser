@@ -356,7 +356,7 @@ class RegisterMemSet(object):
 
 class EssenceFileReader(object):
 
-    def __init__(self, essence_file_xml, regmem_set_filter=[], regmem_element_filter=[]):
+    def __init__(self, essence_file_xml, regmem_set_filter={}, regmem_element_filter={}):
         self.essence_file_xml = essence_file_xml
         self._xml_root = xml.etree.ElementTree.parse(essence_file_xml).getroot()
         self.regmem_set_filter = regmem_set_filter
@@ -395,10 +395,16 @@ class EssenceFileReader(object):
                     if self.macro_sets[i][2] is not None and self.macro_sets[i][2].strip() == macro_set[2].strip():
                         print "##########################################"
                         print "Found duplicate"
+                        print "##########################################"
+                        print "-----------------------------------------"
                         print "original: " + self.macro_sets[i][2]
+                        print "-----------------------------------------"
                         self.macro_sets[i][0].print_info()
+                        print "-----------------------------------------"
                         print "new: " + macro_set[2]
+                        print "-----------------------------------------"
                         macro_set[0].print_info()
+                        print "-----------------------------------------"
                         print "##########################################"
                         self._fix_macro_dup(index - 1, i, "Enter new macro name for original entry:")
                         self._fix_macro_dup(index - 1, self.macro_sets.index(macro_set), "Enter new macro name for new entry:")
@@ -409,10 +415,14 @@ class EssenceFileReader(object):
             new_regmem_set = True
             comment = regmem_set.get_ccomment()
             for regmem_element in regmem_set.regmem_elements:
+                bit_field_filter_check = False
+                bit_field_filter = None
                 if len(self.regmem_element_filter) > 0:
-                    print regmem_element.name
-                    if regmem_element.name not in self.regmem_element_filter:
+                    if regmem_element.name not in self.regmem_element_filter.keys():
                         continue
+                if type(self.regmem_element_filter[regmem_element.name]) is list:
+                    bit_field_filter_check = True
+                    bit_field_filter = self.regmem_element_filter[regmem_element.name]
                 if new_regmem_set is True:
                     self.macro_sets.append((regmem_set, None , None, None))
                     self.macro_sets.append((regmem_set, comment, None, None))
@@ -422,6 +432,9 @@ class EssenceFileReader(object):
                 self.macro_sets.append((regmem_element, None, None, None))
                 self.macro_sets.append((regmem_element, comment, macro, macro_val))
                 for bit_field_element in regmem_element.bit_field_elements:
+                    if bit_field_filter_check:
+                        if bit_field_element.name not in bit_field_filter:
+                            continue
                     comment = bit_field_element.get_ccomment()
                     macro, macro_val = bit_field_element.get_cdefine()
                     self.macro_sets.append((bit_field_element, comment, macro, macro_val))
@@ -453,104 +466,23 @@ if __name__ == "__main__":
     parser.add_argument('--regmap-filter', metavar='regmap-filter', type=argparse.FileType('rt'))
     parser.add_argument('--reg-filter', metavar='reg-filter', type=argparse.FileType('rt'))
     results = parser.parse_args()
-    print results
-    regmap_filter = [line.strip() for line in results.regmap_filter]
-    reg_filter = [line.strip() for line in results.reg_filter]
+    regmap_filter = {}
+    reg_filter = {}
+    for line in results.regmap_filter:
+        regmap_entry = line.strip().split(':')
+        regmap_filter[regmap_entry[0]] = None
+
+    for line in results.reg_filter:
+        reg_entry = line.strip().split(':')
+        if len(reg_entry) > 1:
+            if reg_entry[1] == '':
+                reg_filter[reg_entry[0]] = []
+            else:
+                reg_filter[reg_entry[0]] = reg_entry[1].split(',')
+        else:
+            reg_filter[reg_entry[0]] = None
+
     print reg_filter
-    #print regmap_filter
-    '''
-    filter_list = ['VCC_DVS_FAST_REG',\
-                   'ID1_REG',\
-                   'ID2_REG',\
-                   'PLT_REG',\
-                   'NVMREL_REG',\
-                   'CUSTVER_REG',\
-                   'PROVER_REG',\
-                   'EXTRAVER_REG',\
-                   'LVL0_IRQ_REG',\
-                   'LVL1_PMIC_IRQ_REG',\
-                   'LVL2_INPUT_IRQ_REG',\
-                   'LVL2_TMU_IRQ_REG',\
-                   'LVL2_USBCTRL_IRQ_REG',\
-                   'LVL2_USBPD_IRQ_REG',\
-                   'LVL2_BAT_IRQ_REG',\
-                   'LVL2_BCU_IRQ0_REG',\
-                   'LVL2_BCU_IRQ1_REG',\
-                   'LVL2_CHGCTRL_IRQ_REG',\
-                   'LVL2_PSTAR_IRQ0_REG',\
-                   'LVL2_PSTAR_IRQ1_REG',\
-                   'LVL1_MULT_IRQ_REG',\
-                   'LVL2_GPADC_IRQ0_REG',\
-                   'LVL2_GPADC_IRQ1_REG',\
-                   'LVL2_CC_IRQ_REG Coulomb',\
-                   'LVL2_THERM_IRQ0_REG',\
-                   'LVL2_THERM_IRQ1_REG',\
-                   'LVL2_THERM_IRQ2_REG',\
-                   'LVL2_THERM_IRQ3_REG',\
-                   'LVL2_GPIO_IRQ0_REG',\
-                   'LVL2_GPIO_IRQ1_REG',\
-                   'LVL2_AUDFE_IRQ0_REG',\
-                   'LVL2_AUDFE_IRQ1_REG',\
-                   'LVL2_AUDFE_IRQ2_REG',\
-                   'LVL1_DEBUG_IRQ0_REG',\
-                   'LVL2_VROC_IRQ0_REG',\
-                   'LVL2_VROC_IRQ2_REG',\  
-                   'LVL2_VROC_IRQ3_REG',\
-                   'LVL2_VRMON_IRQ0_REG',\
-                   'LVL2_VRMON_IRQ1_REG',\
-                   'LVL2_VRMON_IRQ2_REG',\
-                   'LVL2_VRMON_IRQ3_REG',\
-                   'LVL2_VRMON_IRQ4_REG',\
-                   'LVL2_REGACC_IRQ_REG',\
-                   'MLVL0_IRQ_REG',\
-                   'MLVL1_PMIC_IRQ_REG',\  
-                   'MLVL2_INPUT_IRQ_REG',\
-                   'MLVL2_TMU_IRQ_REG',\
-                   'MLVL2_USBCTRL_IRQ_REG',\   
-                   'MLVL2_USBPD_IRQ_REG',\
-                   'MLVL2_BAT_IRQ_REG',\
-                   'MLVL2_BCU_IRQ0_REG',\
-                   'MLVL2_BCU_IRQ1_REG',\ 
-                   'MLVL2_CHGCTRL_IRQ_REG',\
-                   'MLVL2_PSTAR_IRQ0_REG,'\
-                   'MLVL2_PSTAR_IRQ1_REG',\ 
-                   'MLVL1_MULT_IRQ_REG',\
-                   'MLVL2_GPADC_IRQ0_REG',\
-                   'MLVL2_GPADC_IRQ1_REG',\
-                   'MLVL2_CC_IRQ_REG',\
-                   'MLVL2_THERM_IRQ0_REG',\
-                   'MLVL2_THERM_IRQ1_REG',\
-                   'MLVL2_THERM_IRQ2_REG',\
-                   'MLVL2_THERM_IRQ3_REG',\
-                   'MLVL2_GPIO_IRQ0_REG',\
-                   'MLVL2_GPIO_IRQ1_REG',\
-                   'MLVL2_AUDFE_IRQ0_REG',\
-                   'MLVL2_AUDFE_IRQ1_REG',\
-                   'MLVL2_AUDFE_IRQ2_REG',\
-                   'MLVL1_DEBUG_IRQ0_REG',\
-                   'MLVL1_DEBUG_IRQ1_REG',\
-                   'MLVL2_VROC_IRQ0_REG',\
-                   'MLVL2_VROC_IRQ2_REG',\
-                   'MLVL2_VROC_IRQ3_REG',\
-                   'MLVL2_VRMON_IRQ0_REG',\
-                   'MLVL2_VRMON_IRQ1_REG',\
-                   'MLVL2_VRMON_IRQ2_REG',\
-                   'MLVL2_VRMON_IRQ3_REG',\
-                   'MLVL2_VRMON_IRQ4_REG',\
-                   'MLVL2_REGACC_IRQ_REG',\
-                   'CHIPCTRL_REG',\
-                   'STDBYCTRL_REG',\
-                   'PSEQCTRL_REG',\
-                   'SRCSTATUS_REG',\
-                   'PWRUP_STATUS_REG',\
-                   'PBCONFIG1_REG',\
-                   'PBCONFIG2_REG',\
-                   '',\
-                   '',\
-                   '',\
-                   '',\
-                   '',\
-                  ]
-    '''
+
     reader = EssenceFileReader(results.i, regmem_set_filter=regmap_filter, regmem_element_filter=reg_filter)
     reader.generate_header_file(results.o, results.product_tag)
